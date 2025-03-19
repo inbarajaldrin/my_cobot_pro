@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>my_cobot_pro</name>
+  <version>0.0.1</version>
+  <description>ROS 2 package for MyCobot Pro</description>
+  <maintainer email="aldrininbaraj@gmail.com">root</maintainer>
+  <license>Apache-2.0</license>
+
+  <!-- ROS 2 Core Dependencies -->
+  <depend>rclpy</depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+
+  <!-- URDF and Visualization -->
+  <depend>robot_state_publisher</depend>
+  <depend>joint_state_publisher</depend>
+  <depend>rviz2</depend>
+
+  <!-- Ament Python Dependency -->
+  <depend>ament_index_python</depend>
+
+  <!-- Testing Dependencies -->
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
