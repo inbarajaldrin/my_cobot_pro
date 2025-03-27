@@ -59,16 +59,16 @@ class IKCommander(Node):
         request.ik_request.pose_stamped.pose.position.y = float(y)
         request.ik_request.pose_stamped.pose.position.z = float(z)
 
-        request.ik_request.pose_stamped.pose.orientation.x = 0.0
-        request.ik_request.pose_stamped.pose.orientation.y = 0.0
-        request.ik_request.pose_stamped.pose.orientation.z = 0.0
-        request.ik_request.pose_stamped.pose.orientation.w = 1.0
+        # request.ik_request.pose_stamped.pose.orientation.x = 0.0
+        # request.ik_request.pose_stamped.pose.orientation.y = 0.0
+        # request.ik_request.pose_stamped.pose.orientation.z = 0.0
+        # request.ik_request.pose_stamped.pose.orientation.w = 1.0
 
         # Set orientation to rotate 90 degrees around X axis (EE Z points downward)
-        # request.ik_request.pose_stamped.pose.orientation.x = -0.35
-        # request.ik_request.pose_stamped.pose.orientation.y = -0.62
-        # request.ik_request.pose_stamped.pose.orientation.z = -0.40
-        # request.ik_request.pose_stamped.pose.orientation.w =  0.57
+        request.ik_request.pose_stamped.pose.orientation.x = -0.35
+        request.ik_request.pose_stamped.pose.orientation.y = -0.62
+        request.ik_request.pose_stamped.pose.orientation.z = -0.40
+        request.ik_request.pose_stamped.pose.orientation.w =  0.57
 
         request.ik_request.timeout.sec = 1
 
