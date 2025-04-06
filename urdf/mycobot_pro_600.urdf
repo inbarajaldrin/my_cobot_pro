@@ -184,7 +184,44 @@
     <origin xyz= "-0.07586 0 0" rpy = "-1.57080 0 0 "/>  
   </joint>
 
+  <link name="tool0">
+    <visual>
+      <geometry>
+        <box size="0.01 0.01 0.01"/> <!-- just a small cube to visualize -->
+      </geometry>
+      <material name="blue">
+        <color rgba="0 0 1 1"/>
+      </material>
+    </visual>
+  </link>
 
+  <joint name="tool0_fixed" type="fixed">
+    <parent link="link6"/>
+    <child link="tool0"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/> 
+  </joint>
+
+  <!-- <link name="ground_plane">
+    <visual>
+      <geometry>
+        <box size="2 2 0.01"/>
+      </geometry>
+      <origin xyz="0 0 -0.005" rpy="0 0 0"/>
+      <material name="gray"><color rgba="0.6 0.6 0.6 1"/></material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2 2 0.01"/>
+      </geometry>
+      <origin xyz="0 0 -0.005" rpy="0 0 0"/>
+    </collision>
+  </link>
+
+  <joint name="ground_plane_fixed" type="fixed">
+    <parent link="base"/>
+    <child link="ground_plane"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint> -->
 
 </robot>
 
