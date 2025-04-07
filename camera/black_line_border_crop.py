@@ -7,7 +7,7 @@ image = cv2.imread(image_path)
 h, w = image.shape[:2]
 
 # Define center region (you can adjust scale here)
-center_margin = 0.0  # 25% margin around center
+center_margin = 0.05  # 25% margin around center
 x1 = int(w * center_margin)
 x2 = int(w * (1 - center_margin))
 y1 = int(h * center_margin)

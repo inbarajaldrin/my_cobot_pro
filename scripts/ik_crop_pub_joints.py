@@ -38,21 +38,42 @@ class LineFollower(Node):
         if image is None:
             self.get_logger().error(f"Could not load image: {image_path}")
             return []
-        
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        _, binary = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY_INV)
-        skeleton = cv2.ximgproc.thinning(binary)
 
-        contours, _ = cv2.findContours(skeleton.astype(np.uint8),
-                                       cv2.RETR_EXTERNAL,
-                                       cv2.CHAIN_APPROX_NONE)
+        h, w = image.shape[:2]
+
+        # Focus on a central crop of the image
+        center_margin = 0.05  # 5% margin
+        x1 = int(w * center_margin)
+        x2 = int(w * (1 - center_margin))
+        y1 = int(h * center_margin)
+        y2 = int(h * (1 - center_margin))
+        center_crop = image[y1:y2, x1:x2]
+
+        # Convert to HSV for robust gray detection
+        hsv_crop = cv2.cvtColor(center_crop, cv2.COLOR_BGR2HSV)
+
+        # Define extended gray HSV range
+        lower_hsv = np.array([0, 0, 30])
+        upper_hsv = np.array([180, 70, 150])
+
+        # Create and clean up mask
+        mask = cv2.inRange(hsv_crop, lower_hsv, upper_hsv)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+
+        # Skeletonize
+        skeleton = cv2.ximgproc.thinning(mask)
+
+        # Find contours
+        contours, _ = cv2.findContours(skeleton.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         if not contours:
-            self.get_logger().error("No contour found in image.")
+            self.get_logger().error("No contours found in image.")
             return []
 
+        # Choose longest contour
         contour = max(contours, key=lambda c: cv2.arcLength(c, False))
         curve = contour[:, 0, :]  # Nx2
 
+        # Sample evenly spaced points along curve
         num_points = inter_num_points * 2
         lengths = np.cumsum(np.sqrt(np.sum(np.diff(curve, axis=0) ** 2, axis=1)))
         lengths = np.insert(lengths, 0, 0.0)
@@ -72,18 +93,23 @@ class LineFollower(Node):
             interp = (1 - ratio) * p1 + ratio * p2
             sampled_points.append(tuple(map(int, interp)))
 
+        # Offset crop-relative points to original image coordinates
+        sampled_points_original = [(pt[0] + x1, pt[1] + y1) for pt in sampled_points]
+
+        # Normalize and convert to real-world coordinates
         x_dim = 0.15
         y_dim = 0.15
         img_h, img_w = image.shape[:2]
 
         converted_points = []
-        for (px, py) in sampled_points:
+        for (px, py) in sampled_points_original:
             norm_x = px / img_w
             norm_y = 1.0 - (py / img_h)
             real_x = norm_x * x_dim
             real_y = norm_y * y_dim
             converted_points.append((real_x, real_y))
 
+        # Only use half the points (to avoid overlap if bi-directional)
         cutoff = num_points // 2 + (num_points % 2)
         final_points = converted_points[:cutoff]
         return final_points
