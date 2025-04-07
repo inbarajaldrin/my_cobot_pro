@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from sensor_msgs.msg import JointState
 from moveit_msgs.srv import GetPositionIK
 
 import cv2
@@ -11,47 +12,48 @@ import numpy as np
 import os
 import json
 
-
 class LineFollower(Node):
     def __init__(self):
         super().__init__('line_follower')
 
-        # 1) Set up client for IK
         self.ik_client = self.create_client(GetPositionIK, '/compute_ik')
         while not self.ik_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('Waiting for /compute_ik service...')
-        
-        # 2) Publisher for joint trajectories
+
         self.traj_pub = self.create_publisher(JointTrajectory, '/arm_controller/joint_trajectory', 10)
+        self.joint_sub = self.create_subscription(JointState, '/joint_states', self.joint_state_callback, 10)
 
-        # Default height for IK motion
+        self.joint_names = [
+            'joint2_to_joint1', 'joint3_to_joint2', 'joint4_to_joint3',
+            'joint5_to_joint4', 'joint6_to_joint5', 'joint6output_to_joint6'
+        ]
+
+        self.current_joint_positions = {}
         self.default_z = 0.08
-
-        # Storage for joint angles to save later
         self.joint_log = []
-
-        # Output path for JSON log file
         self.output_file = os.path.expanduser('~/ros2_ws/src/my_cobot_pro/data/joint_trajectory_log.json')
+
+    def joint_state_callback(self, msg):
+        for name, position in zip(msg.name, msg.position):
+            self.current_joint_positions[name] = position
 
     def detect_line_points(self, image_path, inter_num_points=10):
         image = cv2.imread(image_path)
         if image is None:
             self.get_logger().error(f"Could not load image: {image_path}")
             return []
-        
+
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         _, binary = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY_INV)
         skeleton = cv2.ximgproc.thinning(binary)
 
-        contours, _ = cv2.findContours(skeleton.astype(np.uint8),
-                                       cv2.RETR_EXTERNAL,
-                                       cv2.CHAIN_APPROX_NONE)
+        contours, _ = cv2.findContours(skeleton.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         if not contours:
             self.get_logger().error("No contour found in image.")
             return []
 
         contour = max(contours, key=lambda c: cv2.arcLength(c, False))
-        curve = contour[:, 0, :]  # Nx2
+        curve = contour[:, 0, :]
 
         num_points = inter_num_points * 2
         lengths = np.cumsum(np.sqrt(np.sum(np.diff(curve, axis=0) ** 2, axis=1)))
@@ -85,8 +87,18 @@ class LineFollower(Node):
             converted_points.append((real_x, real_y))
 
         cutoff = num_points // 2 + (num_points % 2)
-        final_points = converted_points[:cutoff]
-        return final_points
+        return converted_points[:cutoff]
+
+    def publish_joint_trajectory(self, joint_positions, description=""):
+        traj = JointTrajectory()
+        traj.joint_names = self.joint_names
+        point = JointTrajectoryPoint()
+        point.positions = joint_positions
+        point.time_from_start.sec = 3
+        traj.points.append(point)
+        self.traj_pub.publish(traj)
+        self.get_logger().info(f"Published: {description}")
+        rclpy.spin_once(self, timeout_sec=1.0)
 
     def call_ik_and_move(self, x_input, y_input, z_value=None):
         if z_value is None:
@@ -109,49 +121,51 @@ class LineFollower(Node):
         req.ik_request.pose_stamped.pose.orientation.z = 0.5
         req.ik_request.pose_stamped.pose.orientation.w = 0.5
 
-        # req.ik_request.pose_stamped.pose.orientation.x = -0.21250174052234885
-        # req.ik_request.pose_stamped.pose.orientation.y = -0.6754919681652727
-        # req.ik_request.pose_stamped.pose.orientation.z = -0.23047410779884112
-        # req.ik_request.pose_stamped.pose.orientation.w = 0.667409392242503
+        try:
+            current_positions = [self.current_joint_positions[name] for name in self.joint_names]
+            req.ik_request.robot_state.joint_state.name = self.joint_names
+            req.ik_request.robot_state.joint_state.position = current_positions
+        except KeyError:
+            self.get_logger().warn("Missing joint state for seeding IK. Proceeding without seed.")
 
         req.ik_request.timeout.sec = 2
-
         future = self.ik_client.call_async(req)
         rclpy.spin_until_future_complete(self, future)
 
         if not future.result():
             self.get_logger().error("Service call failed or no result.")
             return None
-        
+
         if future.result().error_code.val == 1:
             sol = future.result().solution
             joint_positions = list(sol.joint_state.position)
-            joint_names = sol.joint_state.name
 
-            self.get_logger().info(
-                f"IK success at (x={x:.3f}, y={y:.3f}, z={z_value:.3f}). "
-                f"Joints: {[f'{p:.3f}' for p in joint_positions]}"
-            )
+            # Apply joint 1 constraint (within +/- 90 degrees = +/- pi/2 radians)
+            joint1 = joint_positions[0]
+            if abs(joint1) > (np.pi / 2):
+                self.get_logger().warn(f"Rejected solution: Joint 1 exceeds ±90° limit (value: {joint1:.3f} rad)")
+                return None
 
-            # Publish to RViz / robot
             traj = JointTrajectory()
-            traj.joint_names = joint_names
+            traj.joint_names = sol.joint_state.name
             point = JointTrajectoryPoint()
             point.positions = joint_positions
             point.time_from_start.sec = 3
             traj.points.append(point)
-
             self.traj_pub.publish(traj)
-
-            # Save to joint log
             self.joint_log.append(joint_positions)
-
             return joint_positions
         else:
             self.get_logger().error("IK solution not found.")
             return None
 
     def execute_line_follow(self, image_path, inter_num_points=10):
+        home_position = [0.0, -1.5708, 0.0, -1.5708, 0.0, 0.0]
+        self.publish_joint_trajectory(home_position, "Home position")
+
+        workspace_home = [0.704941, -2.266907, -2.281362, -0.19177, 1.567333, -0.22856]
+        self.publish_joint_trajectory(workspace_home, "Workspace home position")
+
         points = self.detect_line_points(image_path, inter_num_points)
         if not points:
             self.get_logger().error("No valid points to execute.")
@@ -163,7 +177,6 @@ class LineFollower(Node):
             self.call_ik_and_move(x, y, self.default_z)
             rclpy.spin_once(self, timeout_sec=1.0)
 
-        # Save all joint positions to JSON
         try:
             os.makedirs(os.path.dirname(self.output_file), exist_ok=True)
             with open(self.output_file, 'w') as f:
@@ -172,20 +185,16 @@ class LineFollower(Node):
         except Exception as e:
             self.get_logger().error(f"Failed to write JSON: {e}")
 
-
 def main(args=None):
     rclpy.init(args=args)
     node = LineFollower()
-
     try:
-        image_path = "/home/aldrin/ros2_ws/src/my_cobot_pro/camera/lab3.jpg"
-        node.execute_line_follow(image_path, inter_num_points=5)
+        image_path = "/home/aldrin/ros2_ws/src/my_cobot_pro/camera/lab3.png"
+        node.execute_line_follow(image_path, inter_num_points=10)
     except KeyboardInterrupt:
         pass
-
     node.destroy_node()
     rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()
