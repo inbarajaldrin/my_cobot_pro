@@ -61,6 +61,7 @@ After installing the workspace:
 ### 2. Run the Line Detection Script
 
 ```bash
+source ~/ros2_ws/venv/bin/activate
 python3 ~/ros2_ws/src/my_cobot_pro/scripts/black_line_border_crop.py
 ```
 
